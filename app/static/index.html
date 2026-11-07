@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Red de agentes A2A</title>
+  <meta name="description" content="Consola de agentes que colaboran por A2A: auditoría CMF/SII, IA aplicada y marketing.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23be3a6e'/%3E%3Ctext x='16' y='21' font-size='13' font-weight='700' text-anchor='middle' fill='white' font-family='Arial'%3EA2A%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">A2A</div>
+      <div>
+        <h1>Red de agentes A2A</h1>
+        <p>Auditoría CMF/SII · IA aplicada · Marketing — FastAPI protegido + LangChain</p>
+      </div>
+    </div>
+    <div class="actions">
+      <span class="pill" id="estado" role="status"><i class="dot"></i><span id="estadoTxt">Conectando…</span></span>
+      <button class="btn ghost" id="btnNueva" type="button">Nueva conversación</button>
+      <button class="btn ghost" id="btnClave" type="button">Clave API</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <!-- ── Agentes ───────────────────────────────────────────── -->
+    <aside class="panel" aria-labelledby="tAgentes">
+      <div class="panel-head">
+        <h2 id="tAgentes">Agentes</h2>
+        <span class="badge" id="badgeModo">Automático</span>
+      </div>
+      <p class="hint">Elige uno para una respuesta directa o varios para sumar aportes A2A. Sin elegir, el enrutador decide.</p>
+      <ul class="agentes" id="listaAgentes" aria-label="Agentes disponibles"></ul>
+
+      <label class="lbl" for="modo">Modo de consulta</label>
+      <select id="modo">
+        <option value="paralelo">Paralelo (varios a la vez)</option>
+        <option value="secuencial">Secuencial (cada uno ve al anterior)</option>
+      </select>
+      <p class="hint" id="hintModo">Se consultan todos los agentes elegidos a la vez. Si no eliges, se usan los que coincidan con la consulta.</p>
+
+      <h3 class="lbl">Ejemplos</h3>
+      <div class="chips" id="ejemplos"></div>
+    </aside>
+
+    <!-- ── Chat ──────────────────────────────────────────────── -->
+    <section class="chat" aria-label="Conversación">
+      <div class="msgs" id="msgs" aria-live="polite">
+        <div class="vacio" id="vacio">
+          <div class="vacio-logo" aria-hidden="true">A2A</div>
+          <h2>¿Qué quieres consultar?</h2>
+          <p>Pregunta por el cumplimiento de una empresa, la viabilidad de automatizar un proceso o una estrategia comercial.
+             Verás cómo cada agente aporta desde su especialidad y cómo se integran sus respuestas.</p>
+        </div>
+      </div>
+      <form class="composer" id="form">
+        <textarea id="texto" rows="2" maxlength="4000" placeholder="Ej.: ¿Cumple la empresa 77.987.654-3 con la normativa?" aria-label="Tu consulta"></textarea>
+        <button class="btn primary" id="btnEnviar" type="submit">Enviar</button>
+        <div class="composer-foot"><span id="contador">0/4000</span><span>Enter para enviar · Shift+Enter para salto de línea</span></div>
+      </form>
+    </section>
+
+    <!-- ── Traza ─────────────────────────────────────────────── -->
+    <aside class="panel" aria-labelledby="tTraza">
+      <div class="panel-head"><h2 id="tTraza">Traza de la última consulta</h2></div>
+      <div class="traza" id="traza"><p class="hint">Aún no hay consultas. Aquí verás la solicitud, qué agentes se llamaron por A2A y cuánto tardó cada uno.</p></div>
+    </aside>
+  </main>
+
+  <!-- Clave API: se guarda solo en esta pestaña (sessionStorage); nunca se envía a terceros ni viaja en el código -->
+  <dialog id="dlgClave">
+    <form method="dialog" id="formClave">
+      <h2>Clave de acceso</h2>
+      <p class="hint">Es la clave configurada en el servidor (<code>API_KEYS</code>). Se guarda solo en esta pestaña y se envía únicamente a este servicio.</p>
+      <input type="password" id="inClave" autocomplete="off" placeholder="Pega tu clave" aria-label="Clave API">
+      <div class="dlg-actions">
+        <button class="btn ghost" value="cancel" type="button" id="btnCancelaClave">Cancelar</button>
+        <button class="btn primary" type="submit">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
