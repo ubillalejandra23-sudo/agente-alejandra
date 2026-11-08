@@ -159,8 +159,15 @@ class Telegram:
                 if not config.TELEGRAM_WEBHOOK_SECRET:
                     log.error("telegram: falta TELEGRAM_WEBHOOK_SECRET; el webhook queda deshabilitado.")
                     return
-                await self.api("setWebhook", url=f"{config.PUBLIC_URL}/telegram/webhook",
-                               secret_token=config.TELEGRAM_WEBHOOK_SECRET, allowed_updates=["message"])
+                for intento in (1, 2, 3):   # dos arranques casi simultáneos (despliegue) pueden toparse con el límite de Telegram
+                    try:
+                        await self.api("setWebhook", url=f"{config.PUBLIC_URL}/telegram/webhook",
+                                       secret_token=config.TELEGRAM_WEBHOOK_SECRET, allowed_updates=["message"])
+                        break
+                    except ErrorTelegram as e:
+                        if "Too Many Requests" not in str(e) or intento == 3:
+                            raise
+                        await asyncio.sleep(2 * intento)
             else:
                 await self.api("deleteWebhook")
                 self._lanzar(self._sondear())

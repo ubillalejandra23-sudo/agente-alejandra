@@ -246,3 +246,23 @@ def test_sin_secreto_el_webhook_queda_deshabilitado(monkeypatch):
     t = ct.Telegram(transport=httpx.MockTransport(falso.handler))
     asyncio.run(t.iniciar())
     assert t.modo == "off" and "setWebhook" not in falso.metodos()
+
+
+def test_reintenta_el_webhook_si_telegram_pide_esperar(monkeypatch):
+    monkeypatch.setattr(config, "TELEGRAM_BOT_TOKEN", TOKEN)
+    monkeypatch.setattr(config, "TELEGRAM_WEBHOOK_SECRET", "secreto-123")
+    monkeypatch.setattr(config, "TELEGRAM_MODO", "webhook")
+    real_sleep = asyncio.sleep
+    monkeypatch.setattr(asyncio, "sleep", lambda s: real_sleep(0))   # sin esperas reales en la prueba
+    intentos = {"n": 0}
+
+    def handler(request):
+        metodo = request.url.path.rsplit("/", 1)[-1]
+        if metodo == "setWebhook":
+            intentos["n"] += 1
+            if intentos["n"] == 1:
+                return httpx.Response(429, json={"ok": False, "description": "Too Many Requests: retry after 1"})
+        return httpx.Response(200, json={"ok": True, "result": {"username": "bot"}})
+    t = ct.Telegram(transport=httpx.MockTransport(handler))
+    asyncio.run(t.iniciar())
+    assert t.modo == "webhook" and intentos["n"] == 2
