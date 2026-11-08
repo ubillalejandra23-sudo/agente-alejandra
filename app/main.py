@@ -9,7 +9,8 @@ from typing import Literal
 
 from a2a.server.routes import fastapi_routes
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -62,7 +63,8 @@ class ConsultaIn(BaseModel):
         "paralelo", description="`paralelo`: todos a la vez. `secuencial`: cada agente recibe como dato los aportes "
                                 "de los anteriores.")
     conversation_id: str | None = Field(None, max_length=100, pattern=r"^[A-Za-z0-9_\-:.]+$",
-                                        description="Id de conversación (memoria por agente).")
+                                        description="Id de conversación (memoria por agente).",
+                                        examples=["auditoria-demo-001"])
 
 
 class AgenteInfo(BaseModel):
@@ -168,6 +170,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     lifespan=lifespan,
+    docs_url=None,          # /docs se sirve más abajo con el diseño de la consola (misma paleta)
     title="Red de agentes A2A · Auditoría CMF/SII",
     version="2.0.0",
     summary="Tres agentes colaborando por A2A, con API protegida, trazabilidad y conclusión verificada",
@@ -315,6 +318,42 @@ async def chat(body: ChatIn):
 
 
 fastapi_routes.add_a2a_routes_to_fastapi(app, agent_card_routes=cards, jsonrpc_routes=rpc)
+
+
+# ── Swagger con la identidad de la consola ────────────────────────────────────────────────────────────────────────────
+FAVICON = ("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' "
+           "rx='8' fill='%23be3a6e'/%3E%3Ctext x='16' y='21' font-size='13' font-weight='700' text-anchor='middle' fill='white' "
+           "font-family='Arial'%3EA2A%3C/text%3E%3C/svg%3E")
+BANNER_DOCS = """<header class="a2a-banner">
+  <div class="a2a-brand"><div class="a2a-logo" aria-hidden="true">A2A</div>
+    <div><h1>Red de agentes A2A · API</h1><p>Auditoría CMF/SII · IA aplicada · Marketing — documentación interactiva</p></div></div>
+  <nav class="a2a-links" aria-label="Enlaces">
+    <span class="a2a-pill" id="a2aEstado"><i></i><span id="a2aEstadoTxt">Conectando…</span></span>
+    <a class="primario" href="/">Consola web</a>
+    <a href="/redoc">ReDoc</a>
+    <a href="/agents/agente_alejandra/.well-known/agent-card.json" target="_blank" rel="noopener">Agent Card</a>
+  </nav>
+</header>"""
+SCRIPT_DOCS = """<script>
+fetch('/health').then(r => r.json()).then(h => {
+  const e = document.getElementById('a2aEstado'); e.classList.add('on');
+  document.getElementById('a2aEstadoTxt').textContent = 'En línea · ' + h.agentes.length + ' agentes · ' + h.persistencia;
+}).catch(() => { document.getElementById('a2aEstado').classList.add('off'); document.getElementById('a2aEstadoTxt').textContent = 'Sin conexión'; });
+</script>"""
+
+
+@app.get("/docs", include_in_schema=False)
+async def swagger_personalizado():
+    base = get_swagger_ui_html(
+        openapi_url=app.openapi_url, title="Red de agentes A2A · API", oauth2_redirect_url=None, swagger_favicon_url=FAVICON,
+        swagger_ui_parameters={"docExpansion": "list", "displayRequestDuration": True, "tryItOutEnabled": True,
+                               "defaultModelsExpandDepth": 0, "syntaxHighlight": {"theme": "obsidian"}})
+    html = base.body.decode()
+    html = html.replace("</head>", '<meta name="viewport" content="width=device-width, initial-scale=1">'
+                                   '<link rel="stylesheet" href="/static/swagger.css"></head>', 1)
+    html = html.replace('<div id="swagger-ui">', BANNER_DOCS + '<div id="swagger-ui">', 1)
+    html = html.replace("</body>", SCRIPT_DOCS + "</body>", 1)
+    return HTMLResponse(html)
 
 
 # ── interfaz web ───────────────────────────────────────────────────────────────────────────────────────────────────
