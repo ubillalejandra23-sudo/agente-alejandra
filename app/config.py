@@ -26,7 +26,12 @@ HISTORIAL_MAX_MENSAJES = int(os.environ.get("HISTORIAL_MAX_MENSAJES") or (12 if 
 PROMPT_CACHE = (os.environ.get("PROMPT_CACHE") or "1").strip().lower() not in ("0", "false", "no", "off")
 
 # Claves válidas separadas por coma (permite rotar sin cortar el servicio). Sin clave => el servidor se niega a atender.
-API_KEYS = [k.strip() for k in os.environ.get("API_KEYS", "").split(",") if k.strip()]
+# La clave de ejemplo de .env.example es pública (está en GitHub): si alguien la deja sin cambiar, NO se acepta como válida.
+CLAVE_DE_EJEMPLO = "clave-ficticia-cambiar-por-una-larga-y-aleatoria"
+_claves = [k.strip() for k in os.environ.get("API_KEYS", "").split(",") if k.strip()]
+if CLAVE_DE_EJEMPLO in _claves:
+    log.error("API_KEYS contiene la clave de ejemplo de .env.example: se ignora. Genere una propia (ver .env.example).")
+API_KEYS = [k for k in _claves if k != CLAVE_DE_EJEMPLO]
 # URL pública base del servicio (aparece en las Agent Cards). En Heroku: https://<app>.herokuapp.com
 PUBLIC_URL = (os.environ.get("PUBLIC_URL") or "http://127.0.0.1:8000").rstrip("/")
 # URL con la que el propio servicio se llama a sí mismo por A2A (Heroku entrega el puerto en $PORT).

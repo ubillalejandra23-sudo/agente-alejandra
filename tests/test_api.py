@@ -1,4 +1,5 @@
 """Pruebas de seguridad, validación y trazabilidad (no llaman al modelo)."""
+import importlib
 import uuid
 
 import pytest
@@ -107,3 +108,16 @@ def test_historial_protegido_y_404():
     assert client.get("/api/historial/no-existe", headers=OK).status_code == 404
     assert client.get("/api/historial?limite=0", headers=OK).status_code == 422
     assert client.get("/health").json()["persistencia"] in ("memoria", "sqlite", "postgres")
+
+
+def test_la_clave_de_ejemplo_publica_no_se_acepta(monkeypatch):
+    """Quien copie .env.example y olvide cambiar API_KEYS no debe dejar la API abierta con una clave pública."""
+    monkeypatch.setenv("API_KEYS", "clave-ficticia-cambiar-por-una-larga-y-aleatoria")
+    try:
+        c = importlib.reload(config)
+        assert c.API_KEYS == []                                  # -> el servidor responde 503 (falla cerrado)
+        monkeypatch.setenv("API_KEYS", "clave-ficticia-cambiar-por-una-larga-y-aleatoria, mi-clave-real-larga")
+        assert importlib.reload(config).API_KEYS == ["mi-clave-real-larga"]
+    finally:
+        monkeypatch.undo()
+        importlib.reload(config)
