@@ -7,9 +7,11 @@ from dataclasses import dataclass, field
 
 from langchain.agents import create_agent
 from langchain_anthropic import ChatAnthropic
+from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from langgraph.checkpoint.memory import InMemorySaver
 
 from app import config
+from app.costos import AVISO_TRUNCADO, VentanaMensajes, registrar_uso_turno, truncado
 from app.agentes.alejandra import herramientas as h_ale, prompts as p_ale
 from app.agentes.bryhan import herramientas as h_bry, prompts as p_bry
 from app.agentes.carlos import herramientas as h_car, prompts as p_car
@@ -121,10 +123,14 @@ AGENTES: dict[str, AgenteDef] = {a.id: a for a in AGENTES_DEF}
 def construir_agentes(checkpointer=None) -> None:
     """Crea el grafo ReAct de cada agente (no hace llamadas de red). Sin checkpointer usa memoria."""
     checkpointer = checkpointer or InMemorySaver()
-    modelo = ChatAnthropic(model=config.MODELO, max_retries=2, timeout=60)
+    modelo = ChatAnthropic(model=config.MODELO, max_retries=2, timeout=60, max_tokens=config.MAX_TOKENS)
+    # Ahorro de tokens: ventana de historial + caché del prompt de sistema (ver app/costos.py).
+    middleware = [VentanaMensajes(config.HISTORIAL_MAX_MENSAJES)]
+    if config.PROMPT_CACHE:
+        middleware.append(AnthropicPromptCachingMiddleware(ttl="5m", unsupported_model_behavior="ignore"))
     for a in AGENTES_DEF:
         a.grafo = create_agent(model=modelo, tools=a.herramientas, system_prompt=a.system_prompt,
-                               checkpointer=checkpointer, name=a.id)
+                               checkpointer=checkpointer, name=a.id, middleware=middleware)
 
 
 def texto(msg) -> str:
@@ -137,4 +143,6 @@ async def responder(agente_id: str, mensaje: str, thread_id: str) -> str:
     a = AGENTES[agente_id]
     cfg = {"configurable": {"thread_id": thread_id}, "recursion_limit": 12}  # tope de ciclo
     r = await a.grafo.ainvoke({"messages": [{"role": "user", "content": mensaje}]}, cfg)
-    return texto(r["messages"][-1])
+    registrar_uso_turno(agente_id, thread_id, r["messages"])
+    final = r["messages"][-1]
+    return texto(final) + (AVISO_TRUNCADO if truncado(final) else "")      # nunca presentar una respuesta cortada como completa

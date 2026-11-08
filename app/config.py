@@ -8,8 +8,22 @@ from dotenv import load_dotenv
 load_dotenv()
 log = logging.getLogger("config")
 
-MODELO = os.environ.get("MODELO") or "claude-sonnet-5-5"
-MODELO_ROUTER = os.environ.get("MODELO_ROUTER") or MODELO  # enrutador y síntesis; puede ser un modelo más barato
+def _si(nombre: str) -> bool:
+    return (os.environ.get(nombre) or "").strip().lower() in ("1", "true", "si", "sí", "yes", "on")
+
+
+# Modo económico: especialistas con Haiku y topes más bajos (útil para desarrollar y probar sin gastar de más).
+ECONOMICO = _si("ECONOMICO")
+MODELO_BARATO = "claude-haiku-5-5"
+# Especialistas (los que usan herramientas y entregan cifras): Sonnet por defecto; Haiku en modo económico.
+MODELO = MODELO_BARATO if ECONOMICO else (os.environ.get("MODELO") or "claude-sonnet-5-5")
+# Enrutador, Coordinador y conclusión integrada: tareas livianas -> Haiku por defecto.
+MODELO_ROUTER = os.environ.get("MODELO_ROUTER") or MODELO_BARATO
+# Topes de longitud de respuesta (una respuesta cortada se avisa) y ventana de historial enviada al modelo.
+MAX_TOKENS = int(os.environ.get("MAX_TOKENS") or (1500 if ECONOMICO else 2500))
+MAX_TOKENS_AUX = int(os.environ.get("MAX_TOKENS_AUX") or 1500)
+HISTORIAL_MAX_MENSAJES = int(os.environ.get("HISTORIAL_MAX_MENSAJES") or (12 if ECONOMICO else 24))
+PROMPT_CACHE = (os.environ.get("PROMPT_CACHE") or "1").strip().lower() not in ("0", "false", "no", "off")
 
 # Claves válidas separadas por coma (permite rotar sin cortar el servicio). Sin clave => el servidor se niega a atender.
 API_KEYS = [k.strip() for k in os.environ.get("API_KEYS", "").split(",") if k.strip()]

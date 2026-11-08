@@ -101,9 +101,28 @@ heroku config:set TELEGRAM_BOT_TOKEN=<token> TELEGRAM_ALLOWED_IDS=<su-id> TELEGR
 ```
 Sin `TELEGRAM_BOT_TOKEN` el canal queda desactivado y el resto del servicio funciona igual.
 
+## Control de costos (tokens) sin perder fidelidad
+El diseño reparte el trabajo por modelo según lo que exige cada tarea:
+
+| Quién | Modelo por defecto | Por qué |
+|---|---|---|
+| Especialistas (Alejandra, Bryhan, Carlos): usan herramientas y entregan cifras | `claude-sonnet-5-5` (`MODELO`) | La fidelidad de datos, unidades y supuestos es un requisito del taller. |
+| Enrutador, Coordinador y conclusión integrada | `claude-haiku-5-5` (`MODELO_ROUTER`) | Tareas livianas; los aportes de cada agente igual se entregan sin modificar y las cifras de la conclusión se verifican. |
+
+Medidas incluidas (todas activas por defecto, configurables en `.env`):
+- **Caché de prompts de Anthropic** (`PROMPT_CACHE=1`): el prompt de sistema se repite en cada llamada; en una evaluación completa el **76 % de los tokens de entrada se leyeron desde la caché**.
+- **Ventana de historial** (`HISTORIAL_MAX_MENSAJES`, 24): al modelo se le envían solo los últimos mensajes (empezando siempre en un mensaje de la persona, sin dejar resultados de herramientas huérfanos). La memoria completa sigue guardada.
+- **Topes de longitud** (`MAX_TOKENS` 2500 y `MAX_TOKENS_AUX` 1500): si una respuesta se corta por el tope **se avisa explícitamente**, nunca se presenta como completa.
+- **Límite de consultas por minuto** (`RATE_LIMIT_PER_MIN`): bájelo (p. ej. a 8) si quiere un máximo de gasto por clave o por persona de Telegram.
+- **Registro de consumo**: cada llamada deja `tokens agente=… llamadas=… entrada=… salida=… cache_lectura=…` en el log del servidor.
+
+**Modo económico (`ECONOMICO=1`)**: Haiku también en los especialistas, historial de 12 mensajes y topes menores. **Solo para desarrollo y pruebas.** Al evaluarlo se vio un fallo real: en el caso E02 el especialista omitió la fecha de la última declaración (24/25 casos; ver `evidencias/resultados/*-local-economico/`). Para entregar o demostrar, use la configuración por defecto (25/25).
+
+Otros hábitos que ahorran: elegir **un solo agente** (se salta el enrutador y la conclusión), evitar el modo *secuencial* si no hace falta, usar *Nueva conversación* / `/nueva`, correr la evaluación con `--sin-modelo` o `--solo …` y la completa solo antes de entregar, y fijar un **límite de gasto mensual** en la consola de Anthropic.
+
 ## Preparación manual (lo que debe tener el evaluador)
 1. **Python 3.11+** (probado con 3.12) e internet.
-2. **Una clave de Anthropic** (`ANTHROPIC_API_KEY`) con crédito: https://console.anthropic.com. Cada consulta consume tokens (una consulta de 3 agentes hace ~5 llamadas al modelo: enrutador, 3 agentes y conclusión).
+2. **Una clave de Anthropic** (`ANTHROPIC_API_KEY`) con crédito: https://console.anthropic.com. Cada consulta consume tokens (una de 3 agentes hace ~5 llamadas al modelo: enrutador, 3 agentes y conclusión; ver *Control de costos*).
 3. Elegir una `API_KEYS` propia (texto largo y aleatorio).
 4. No se usan cuentas de Gmail/Telegram/WhatsApp ni se envían mensajes: **no hay acciones con efectos externos**; los datos SII/CMF/fondos son simulados. Para detener los procesos: `Ctrl+C` (local) o `heroku ps:scale web=0` (nube).
 
@@ -209,6 +228,7 @@ app/
   a2a_server.py    Agent Card y endpoint A2A por agente (a2a-sdk)
   a2a_cliente.py   cliente A2A (descubre la tarjeta y envía message/send)
   canal_telegram.py  bot de Telegram (webhook/polling, autorización por ID, formato de respuestas)
+  costos.py        ventana de historial, avisos de respuesta cortada y registro de tokens
   almacen.py       persistencia: Postgres / SQLite / memoria (checkpointer de LangGraph + historial)
   agentes/         registro.py · alejandra/ · bryhan/ · carlos/  (prompts.py + herramientas.py)
   security.py      clave de acceso y límite de consultas
@@ -216,6 +236,6 @@ app/
   static/          index.html · styles.css · app.js  (consola web sin dependencias externas)
 evaluacion/        casos.py · evaluar.py (25 casos de fidelidad, A2A y seguridad → reporte)
 evidencias/        README.md (guion) · resultados/ · capturas/ · capturar_ui.py
-tests/             test_api.py · test_coordinador.py · test_telegram.py · test_persistencia.py · test_e2e.py (modelo real)
+tests/             test_api.py · test_costos.py · test_coordinador.py · test_telegram.py · test_persistencia.py · test_e2e.py (modelo real)
 Procfile  .python-version  requirements*.txt  .env.example
 ```

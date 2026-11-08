@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from app import config
 from app.a2a_cliente import ErrorA2A, enviar_a2a
 from app.almacen import almacen
+from app.costos import AVISO_TRUNCADO, registrar_uso_llamada, truncado
 from app.agentes.registro import AGENTES, texto as aplanar
 
 log = logging.getLogger("orquestador")
@@ -97,7 +98,7 @@ _modelo_aux = None
 def modelo_aux() -> ChatAnthropic:
     global _modelo_aux
     if _modelo_aux is None:
-        _modelo_aux = ChatAnthropic(model=config.MODELO_ROUTER, max_retries=2, timeout=60)
+        _modelo_aux = ChatAnthropic(model=config.MODELO_ROUTER, max_retries=2, timeout=60, max_tokens=config.MAX_TOKENS_AUX)
     return _modelo_aux
 
 
@@ -162,7 +163,8 @@ def _catalogo(miembros: dict[str, Miembro]) -> str:
 async def coordinador(pregunta: str, conv: str, miembros: dict[str, Miembro]) -> str:
     r = await modelo_aux().ainvoke([("system", SISTEMA_COORDINADOR.format(catalogo=_catalogo(miembros))),
                                     ("human", f"{_hist_texto(conv)}<mensaje>\n{pregunta}\n</mensaje>")])
-    return aplanar(r).strip()
+    registrar_uso_llamada("coordinador", r)
+    return aplanar(r).strip() + (AVISO_TRUNCADO if truncado(r) else "")
 
 
 # ── llamada A2A a un agente ────────────────────────────────────────────────────────────────────────────────────────
@@ -227,8 +229,9 @@ async def sintetizar(pregunta: str, conv: str, resultados: list[dict]) -> tuple[
     try:
         r = await modelo_aux().ainvoke([("system", SISTEMA_SINTESIS),
                                         ("human", f"{_hist_texto(conv)}<consulta>\n{pregunta}\n</consulta>\n\n{bloques}")])
+        registrar_uso_llamada("sintesis", r)
         limpio = re.sub(r"^\s*#{1,6}\s*Conclusi[oó]n integrada\s*\n+", "", aplanar(r).strip(), flags=re.I)
-        return limpio, True
+        return limpio + (AVISO_TRUNCADO if truncado(r) else ""), True
     except Exception:
         log.exception("fallo de la síntesis")
         return ("⚠ No se pudo generar la conclusión integrada (falla del proveedor del modelo). "

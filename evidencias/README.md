@@ -9,6 +9,7 @@ taller: **entorno y fecha · solicitud · resultado esperado · resultado obteni
 |---|---|---|
 | `resultados/<fecha>-local/REPORTE.md` | 25 casos ejecutados contra el servidor **local**: fidelidad de cifras, datos faltantes, no inventar, fuera de alcance, inyección de instrucciones, Coordinador (saludos y preguntas generales), enrutamiento, colaboración A2A y seguridad (acceso permitido/rechazado) | `python -m evaluacion.evaluar` |
 | `resultados/<fecha>-heroku/REPORTE.md` | Los mismos casos contra el **despliegue en Heroku** (evidencia del entorno remoto) | `python -m evaluacion.evaluar --url https://<app>.herokuapp.com --key <clave> --entorno HEROKU` |
+| `resultados/<fecha>-local-economico/REPORTE.md` | La misma evaluación con el **modo económico** (Haiku en todo): 24/25. Evidencia de por qué los especialistas siguen con Sonnet (omitió un dato en E02) | `ECONOMICO=1 uvicorn …` y luego `python -m evaluacion.evaluar --entorno LOCAL-ECONOMICO` |
 | `resultados/*/resultados.json` | Datos crudos: respuesta completa, `solicitud_id`, agentes llamados por A2A, tiempos y contextId | (idem) |
 | `capturas/*.png` | Recorrido de la consola web: inicio, consulta en curso (diagrama animado), resultado y traza | `python evidencias/capturar_ui.py` |
 
