@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from app import config
 from app.a2a_cliente import ErrorA2A, enviar_a2a
+from app.almacen import almacen
 from app.agentes.registro import AGENTES, texto as aplanar
 
 log = logging.getLogger("orquestador")
@@ -243,9 +244,14 @@ async def _pipeline(pregunta: str, agentes: list[str], modo: str, conversation_i
 
     ms = int((time.monotonic() - t0) * 1000)
     log.info("consulta rid=%s completada ok=%d/%d ms=%d", rid, len(ok), len(resultados), ms)
-    return {"solicitud_id": rid, "conversation_id": conv, "modo": modo, "automatico": auto, "motivo_ruta": motivo,
-            "respuesta": respuesta, "conclusion": conclusion, "agentes": resultados, "verificacion": verificacion,
-            "ms_total": ms}
+    resultado = {"solicitud_id": rid, "conversation_id": conv, "modo": modo, "automatico": auto, "motivo_ruta": motivo,
+                 "respuesta": respuesta, "conclusion": conclusion, "agentes": resultados, "verificacion": verificacion,
+                 "ms_total": ms}
+    try:
+        await almacen.guardar_consulta(resultado, pregunta)
+    except Exception:  # el historial es accesorio: si falla, la respuesta igual se entrega
+        log.exception("no se pudo guardar la consulta en el historial")
+    return resultado
 
 
 async def stream(pregunta: str, agentes: list[str], modo: str, conversation_id: str | None):

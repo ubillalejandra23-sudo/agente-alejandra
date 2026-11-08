@@ -98,3 +98,12 @@ def test_verificador_detecta_cifras_inventadas():
     aportes = ["La concentración es 35% y el límite 20% (NCG 365). RUT 77.987.654-3, multa 2025."]
     assert cifras_no_respaldadas("Concentración 35% vs límite 20% del RUT 77.987.654-3 en 2025.", aportes) == []
     assert cifras_no_respaldadas("La concentración sería 42% y vence 2031.", aportes) == ["2031", "42"]
+
+
+def test_historial_protegido_y_404():
+    assert client.get("/api/historial").status_code == 401
+    assert client.get("/api/historial/algo").status_code == 401
+    assert client.get("/api/historial", headers=OK).status_code == 200
+    assert client.get("/api/historial/no-existe", headers=OK).status_code == 404
+    assert client.get("/api/historial?limite=0", headers=OK).status_code == 422
+    assert client.get("/health").json()["persistencia"] in ("memoria", "sqlite", "postgres")

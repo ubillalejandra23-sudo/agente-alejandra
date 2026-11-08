@@ -2,17 +2,19 @@
 import json
 import logging
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
 from a2a.server.routes import fastapi_routes
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app import config
 from app.a2a_server import es_ruta_rpc, rutas_a2a
+from app.almacen import almacen
 from app.agentes.registro import AGENTES, construir_agentes, responder
 from app.orquestador import MODOS, ErrorConsulta, consultar, roster, stream
 from app.security import clave_valida, exigir_clave, extraer_clave
@@ -93,6 +95,8 @@ class ConsultaOut(BaseModel):
 class HealthOut(BaseModel):
     status: str = Field(..., examples=["ok"])
     agentes: list[str]
+    persistencia: str = Field(..., description="Dónde se guarda la memoria y el historial: `postgres`, `sqlite` o `memoria` "
+                                               "(esta última se pierde al reiniciar).")
     acceso_configurado: bool = Field(..., description="False si el servidor no tiene API_KEYS (rechazará todo con 503).")
 
 
@@ -134,12 +138,23 @@ todos los agentes · `503` acceso no configurado.
 TAGS = [
     {"name": "Estado", "description": "Salud del servicio y catálogo de agentes. Público, sin datos sensibles."},
     {"name": "Consulta colaborativa", "description": "Varios agentes colaborando por A2A con conclusión integrada. **Requiere clave.**"},
+    {"name": "Historial", "description": "Consultas guardadas con su trazabilidad. **Requiere clave.**"},
     {"name": "Agente", "description": "Consulta directa a un único agente. **Requiere clave.** Memoria por `conversation_id`."},
     {"name": "A2A: Agent Card", "description": "Tarjeta pública de cada agente (habilidades, URL, seguridad) para que otros agentes A2A lo descubran."},
     {"name": "A2A: JSON-RPC", "description": "Endpoint A2A de cada agente (`message/send`). **Requiere clave** (`X-API-Key`)."},
 ]
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Abre la base de datos y reconstruye los agentes con la memoria persistente."""
+    await almacen.abrir()
+    construir_agentes(almacen.checkpointer)
+    yield
+    await almacen.cerrar()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Red de agentes A2A · Auditoría CMF/SII",
     version="2.0.0",
     summary="Tres agentes colaborando por A2A, con API protegida, trazabilidad y conclusión verificada",
@@ -168,7 +183,8 @@ async def proteger_a2a(request: Request, call_next):
          description="Indica si el servicio está en línea, qué agentes locales tiene y si hay claves configuradas. "
                      "No requiere clave y no expone datos sensibles.")
 async def health():
-    return {"status": "ok", "agentes": list(AGENTES), "acceso_configurado": bool(config.API_KEYS)}
+    return {"status": "ok", "agentes": list(AGENTES), "persistencia": almacen.backend,
+            "acceso_configurado": bool(config.API_KEYS)}
 
 
 @app.get("/api/agentes", tags=["Estado"], response_model=list[AgenteInfo], summary="Catálogo de agentes",
@@ -217,6 +233,28 @@ async def api_consulta_stream(body: ConsultaIn):
         async for ev in stream(body.mensaje, body.agentes, body.modo, body.conversation_id):
             yield json.dumps(ev, ensure_ascii=False) + "\n"
     return StreamingResponse(lineas(), media_type="application/x-ndjson", headers={"Cache-Control": "no-cache"})
+
+
+# ── historial ──────────────────────────────────────────────────────────────────────────────────────────────────────
+@app.get("/api/historial", tags=["Historial"], dependencies=[Depends(exigir_clave)], summary="Historial de consultas",
+         description="Últimas consultas colaborativas guardadas (más recientes primero). Con `conversation_id` devuelve esa "
+                     "conversación en orden cronológico; con `detalle=true` incluye respuestas y aportes completos. "
+                     "**Requiere clave.** Las consultas se guardan en Postgres/SQLite según el entorno (ver `/health`).",
+         responses={401: {"model": ErrorOut}, 503: {"model": ErrorOut}})
+async def historial(conversation_id: str | None = Query(None, pattern=r"^[A-Za-z0-9_\-:.]+$", max_length=100),
+                    limite: int = Query(30, ge=1, le=200), detalle: bool = False):
+    return await almacen.listar(conversation_id, limite, detalle)
+
+
+@app.get("/api/historial/{solicitud_id}", tags=["Historial"], dependencies=[Depends(exigir_clave)],
+         summary="Detalle de una consulta", description="Consulta completa por su `solicitud_id` (el mismo que aparece en los logs "
+         "y en las llamadas A2A como `X-Request-ID`). **Requiere clave.**",
+         responses={401: {"model": ErrorOut}, 404: {"model": ErrorOut}, 503: {"model": ErrorOut}})
+async def historial_detalle(solicitud_id: str):
+    r = await almacen.obtener(solicitud_id)
+    if not r:
+        raise HTTPException(404, "No existe una consulta con ese solicitud_id.")
+    return r
 
 
 # ── agente directo ─────────────────────────────────────────────────────────────────────────────────────────────────

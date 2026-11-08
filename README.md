@@ -46,6 +46,10 @@ Otro agente A2A ──▶  │  /agents/{id}/a2a  ◀────────   
 - Si un agente falla se informa como falla (`estado: error`); si fallan todos, la API responde **502**. Si un agente pide datos, se transmiten como *Datos que faltan*.
 - Lo que devuelve otro agente se pasa al modelo como **dato** entre etiquetas, nunca como instrucción.
 
+**Memoria persistente e historial:** la memoria de cada agente (por conversación) y el historial de consultas se guardan en **Postgres** si existe `DATABASE_URL` (Heroku), en **SQLite local** (`data/agentes.db`) en otro caso, o solo en memoria con `PERSISTENCIA=memoria`. `GET /health` informa el backend activo (`persistencia`). Sobreviven a reinicios y despliegues; la consola web tiene un botón **Historial** para retomar conversaciones. Si la base falla al arrancar, el servicio sigue en memoria y lo registra en el log (no se presenta como persistente).
+
+**Diagrama del flujo A2A:** la consola dibuja en vivo cómo viaja la consulta (Usuario → Enrutador → agentes → Síntesis → Respuesta): nodos que se activan, aristas animadas, tiempos por agente, agentes no consultados atenuados y errores en rojo. En modo secuencial muestra la cadena entre agentes.
+
 **Colaboración A2A:** modo *paralelo* (todos a la vez) o *secuencial* (cada agente recibe como dato los aportes de los anteriores y puede señalar contradicciones). El `contextId` A2A es estable por conversación y agente (memoria). Se pueden sumar agentes de otras personas con `A2A_EXTERNOS`.
 
 ## Endpoints
@@ -56,8 +60,9 @@ Otro agente A2A ──▶  │  /agents/{id}/a2a  ◀────────   
 | `GET /docs` | público | Swagger UI (botón **Authorize**) |
 | `GET /health` · `GET /api/agentes` | público | Estado y catálogo de agentes |
 | `GET /agents/{id}/.well-known/agent-card.json` | público | Agent Card A2A de cada agente (declara que requiere `X-API-Key`) |
-| `POST /api/consulta` | **clave** | Consulta colaborativa (respuesta completa con trazabilidad) |
+| `POST /api/consulta` | **clave** | Consulta colaborativa (respuesta completa con trazabilidad). En Heroku usar `/stream` si la consulta puede pasar de 30 s |
 | `POST /api/consulta/stream` | **clave** | Igual, con progreso en vivo (NDJSON); lo usa la consola web |
+| `GET /api/historial` · `GET /api/historial/{solicitud_id}` | **clave** | Consultas guardadas (con `?conversation_id=…&detalle=true` devuelve una conversación completa) |
 | `POST /chat` | **clave** | Consulta directa a un agente (`"agente": "agente_bryhan"`…) |
 | `POST /agents/{id}/a2a` | **clave** | JSON-RPC A2A de cada agente (`/a2a` = Alejandra, ruta original) |
 
@@ -115,27 +120,36 @@ curl -X POST http://127.0.0.1:8000/agents/agente_alejandra/a2a -H "X-API-Key: SU
 ```
 Datos de prueba: RUT `76.123.456-7`, `77.987.654-3`, `78.555.111-2`; fondos `FM Acciones Chile`, `FM Deuda Privada`, `FM Inmobiliario`; tipos de empresa `sa`/`spa`/`ltda`.
 
+**Evaluación automática de fidelidad** (21 casos: cifras y cálculos exactos, datos faltantes, no inventar, fuera de alcance, inyección de instrucciones, enrutamiento, colaboración A2A y seguridad):
+```bash
+python -m evaluacion.evaluar                       # contra http://127.0.0.1:8000 (usa la 1ª clave de API_KEYS en .env)
+python -m evaluacion.evaluar --url https://<app>.herokuapp.com --key <clave> --entorno HEROKU
+python -m evaluacion.evaluar --sin-modelo          # solo seguridad/validación (gratis)
+```
+Genera `evidencias/resultados/<fecha>-<entorno>/REPORTE.md` en el formato del taller (entorno y fecha, solicitud, resultado esperado, obtenido, observaciones) y `resultados.json`; nunca escribe la clave. Las comprobaciones buscan cifras y términos exactos: una respuesta correcta redactada distinto puede marcarse como fallo y debe revisarse a mano.
+
 **Pruebas automáticas:**
 ```bash
 pip install -r requirements-dev.txt
 pytest -q tests/test_api.py     # seguridad, validación, Agent Cards, límites (sin modelo, gratis)
+pytest -q tests/test_persistencia.py  # SQLite y Postgres embebido: el historial y la memoria sobreviven a un reinicio
 pytest -q tests/test_e2e.py     # extremo a extremo con modelo real y servidor (consume tokens; requiere ANTHROPIC_API_KEY)
 ```
 
 ### Agentes externos (opcional)
 Para sumar el agente A2A de otra persona, defina en `.env` `A2A_EXTERNOS` (JSON en una línea, ver `.env.example`) con su `card_url` y, si la exige, su `api_key`. Aparece en el selector y colabora con los locales.
 
-## Evidencias (completar con capturas propias)
-Guárdelas en `evidencias/` (sin claves visibles) y describa cada caso con: **entorno y fecha (LOCAL o HEROKU)**, **solicitud**, **resultado esperado**, **resultado obtenido**, **observaciones**. Casos mínimos:
-1. Consola web: una consulta con 2–3 agentes, la conclusión integrada y la traza (`solicitud_id`, agentes, tiempos).
-2. Swagger: `POST /api/consulta` autorizado con su respuesta.
-3. Acceso rechazado (401) sin clave o con clave falsa.
-4. Log de uvicorn que relacione la solicitud (`consulta rid=…`) con las llamadas A2A (`a2a rid=… agente=…`).
-5. Un caso de dato faltante (p. ej. consultar un fondo sin nombre) donde el agente pide el dato en vez de inventarlo.
+## Evidencias
+Carpeta `evidencias/` (ver `evidencias/README.md` con el guion):
+- `resultados/<fecha>-<entorno>/REPORTE.md` — generado por `python -m evaluacion.evaluar`: cada caso con **entorno y fecha, solicitud, resultado esperado, resultado obtenido y observaciones**, trazabilidad (`solicitud_id`, llamadas A2A con tiempos y contextId) y comprobaciones.
+- `capturas/` — capturas de la consola web (opcional: `python evidencias/capturar_ui.py` las genera con el navegador instalado). Las del acceso rechazado (401) y las de Swagger se toman a mano siguiendo el guion.
+- Log del servidor: `uvicorn app.main:app --port 8000 2>&1 | tee evidencias/log-local.txt` y busque `rid=<solicitud_id>` para relacionar la solicitud con cada llamada A2A.
 
 ## Límites conocidos
 - Datos SII/CMF/fondos **simulados**; los agentes solo recomiendan, no ejecutan ni informan a organismos.
-- Memoria de conversación y tareas A2A **en memoria del proceso**: se pierden al reiniciar. Un solo proceso (necesario para eso).
+- Las tareas A2A viven en memoria del proceso (la memoria de los agentes y el historial sí se persisten). Un solo proceso.
+- Con Postgres en **Windows** local, `psycopg` no funciona con el bucle asyncio por defecto; el servicio cae a SQLite con un aviso (Heroku/Linux no tiene este problema).
+- El historial guarda las preguntas y respuestas en la base (datos de prueba, sin datos personales); proteja la clave y la base como cualquier registro de consultas.
 - El límite de consultas protege `/chat` y `/api/consulta`; los endpoints A2A directos están protegidos por clave pero sin límite de tasa.
 - La verificación de cifras detecta valores ausentes en los aportes; no valida el *razonamiento* de la conclusión (por eso los aportes se entregan completos).
 - A2A: respuesta inmediata (sin streaming ni cancelación de tareas). Los agentes de Bryhan y Carlos pasaron de Gemini a Claude: su comportamiento puede diferir levemente del original.
@@ -153,7 +167,7 @@ heroku logs --tail            # evidencias del entorno remoto
 heroku ps:scale web=0         # detener (evita costos)
 ```
 Pruebe `https://<app>.herokuapp.com/` y `/docs`, y entregue al evaluador la URL y una clave por una vía privada.
-**Datos que se conservan:** ninguno en disco; la memoria de conversación vive en RAM y Heroku reinicia los dynos al menos una vez al día. Para persistirla habría que usar un checkpointer en Postgres (`heroku-postgresql`). **Servicios externos:** API de Anthropic (y los agentes de `A2A_EXTERNOS`, si se configuran). La respuesta se entrega en *streaming* para no chocar con el límite de 30 s de Heroku.
+**Datos que se conservan:** con el complemento **Heroku Postgres** (`heroku addons:create heroku-postgresql:essential-0`, de pago) el servicio lo detecta por `DATABASE_URL` y conserva la memoria de los agentes y el historial entre reinicios y despliegues. Sin él, usa SQLite en el disco efímero del dyno (se borra al reiniciar, al menos una vez al día). **Servicios externos:** API de Anthropic (y los agentes de `A2A_EXTERNOS`, si se configuran). La respuesta se entrega en *streaming* para no chocar con el límite de 30 s de Heroku.
 
 ## Estructura
 ```
@@ -162,10 +176,13 @@ app/
   orquestador.py   enrutador, llamadas A2A, síntesis y verificación de cifras
   a2a_server.py    Agent Card y endpoint A2A por agente (a2a-sdk)
   a2a_cliente.py   cliente A2A (descubre la tarjeta y envía message/send)
+  almacen.py       persistencia: Postgres / SQLite / memoria (checkpointer de LangGraph + historial)
   agentes/         registro.py · alejandra/ · bryhan/ · carlos/  (prompts.py + herramientas.py)
   security.py      clave de acceso y límite de consultas
   config.py        variables de entorno
   static/          index.html · styles.css · app.js  (consola web sin dependencias externas)
-tests/             test_api.py (seguridad/validación) · test_e2e.py (modelo real)
+evaluacion/        casos.py · evaluar.py (21 casos de fidelidad, A2A y seguridad → reporte)
+evidencias/        README.md (guion) · resultados/ · capturas/ · capturar_ui.py
+tests/             test_api.py · test_persistencia.py · test_e2e.py (modelo real)
 Procfile  .python-version  requirements*.txt  .env.example
 ```

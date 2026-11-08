@@ -1,2 +1,6 @@
 -r requirements.txt
 pytest>=8
+# Postgres embebido para probar la persistencia sin instalar nada (solo desarrollo)
+pgserver>=0.1.4
+# Opcional: capturas automáticas de la interfaz (evidencias/capturar_ui.py). Usa el Edge o Chrome ya instalado.
+# playwright>=1.45

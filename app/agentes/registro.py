@@ -14,9 +14,6 @@ from app.agentes.alejandra import herramientas as h_ale, prompts as p_ale
 from app.agentes.bryhan import herramientas as h_bry, prompts as p_bry
 from app.agentes.carlos import herramientas as h_car, prompts as p_car
 
-checkpointer = InMemorySaver()
-
-
 @dataclass
 class AgenteDef:
     id: str                      # graph id / nombre en la Agent Card
@@ -121,8 +118,9 @@ AGENTES_DEF: list[AgenteDef] = [
 AGENTES: dict[str, AgenteDef] = {a.id: a for a in AGENTES_DEF}
 
 
-def construir_agentes() -> None:
-    """Crea el grafo ReAct de cada agente (no hace llamadas de red)."""
+def construir_agentes(checkpointer=None) -> None:
+    """Crea el grafo ReAct de cada agente (no hace llamadas de red). Sin checkpointer usa memoria."""
+    checkpointer = checkpointer or InMemorySaver()
     modelo = ChatAnthropic(model=config.MODELO, max_retries=2, timeout=60)
     for a in AGENTES_DEF:
         a.grafo = create_agent(model=modelo, tools=a.herramientas, system_prompt=a.system_prompt,

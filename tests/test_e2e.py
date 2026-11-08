@@ -111,3 +111,51 @@ def test_agente_externo_caido_se_informa_como_error(servidor):
         assert r.status_code == 502 and "agente_fantasma" in r.json()["detail"]
     finally:
         p.terminate()
+
+
+def _arrancar(extra: dict):
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        puerto = s.getsockname()[1]
+    env = dict(os.environ, API_KEYS=CLAVE, PORT=str(puerto), PUBLIC_URL=f"http://127.0.0.1:{puerto}",
+               INTERNAL_URL=f"http://127.0.0.1:{puerto}", **extra)
+    p = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--port", str(puerto)], env=env,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    base = f"http://127.0.0.1:{puerto}"
+    for _ in range(60):
+        try:
+            if httpx.get(base + "/health", timeout=1).status_code == 200:
+                return p, base
+        except httpx.HTTPError:
+            time.sleep(0.5)
+    p.kill()
+    pytest.fail("el servidor no arrancó")
+
+
+def test_la_memoria_del_agente_sobrevive_a_un_reinicio(tmp_path):
+    """Persistencia real: el agente recuerda un dato de la conversación aunque el servidor se haya reiniciado."""
+    datos = {"DATA_DIR": str(tmp_path), "PERSISTENCIA": "auto"}
+    os.environ.pop("DATABASE_URL", None)
+    p, base = _arrancar(datos)
+    try:
+        assert httpx.get(base + "/health").json()["persistencia"] == "sqlite"
+        r = httpx.post(base + "/chat", headers=H, timeout=120, json={
+            "conversation_id": "conv-reinicio", "mensaje": "Estamos auditando a la empresa con RUT 77.987.654-3. Solo anótalo."})
+        assert r.status_code == 200
+        c = httpx.post(base + "/api/consulta", headers=H, timeout=120,
+                       json={"mensaje": "¿Cuál fue la última empresa que mencioné?", "agentes": ["agente_alejandra"],
+                             "conversation_id": "conv-reinicio"})
+        rid = c.json()["solicitud_id"]
+    finally:
+        p.terminate()
+        p.wait(10)
+
+    p, base = _arrancar(datos)  # ← reinicio del servicio
+    try:
+        h = httpx.get(base + f"/api/historial/{rid}", headers=H)
+        assert h.status_code == 200 and h.json()["solicitud_id"] == rid  # el historial sobrevivió
+        r = httpx.post(base + "/chat", headers=H, timeout=120, json={
+            "conversation_id": "conv-reinicio", "mensaje": "¿Qué RUT te dije hace un momento?"})
+        assert "77.987.654-3" in r.json()["respuesta"]  # la memoria del agente sobrevivió
+    finally:
+        p.terminate()

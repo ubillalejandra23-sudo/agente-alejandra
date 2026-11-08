@@ -19,6 +19,7 @@
     </div>
     <div class="actions">
       <span class="pill" id="estado" role="status"><i class="dot"></i><span id="estadoTxt">Conectando…</span></span>
+      <button class="btn ghost" id="btnHistorial" type="button">Historial</button>
       <button class="btn ghost" id="btnNueva" type="button">Nueva conversación</button>
       <button class="btn ghost" id="btnClave" type="button">Clave API</button>
     </div>
@@ -47,6 +48,10 @@
 
     <!-- ── Chat ──────────────────────────────────────────────── -->
     <section class="chat" aria-label="Conversación">
+      <details class="flujo" id="flujoBox" open>
+        <summary><span>Flujo A2A</span><span class="flujo-estado" id="flujoEstado">en espera</span></summary>
+        <div id="flujo" role="img" aria-label="Diagrama del flujo de la consulta entre los agentes"></div>
+      </details>
       <div class="msgs" id="msgs" aria-live="polite">
         <div class="vacio" id="vacio">
           <div class="vacio-logo" aria-hidden="true">A2A</div>
@@ -80,6 +85,13 @@
         <button class="btn primary" type="submit">Guardar</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="dlgHistorial" class="ancho">
+    <h2>Historial de consultas</h2>
+    <p class="hint" id="histInfo">Consultas guardadas por el servidor (se conservan entre reinicios si hay base de datos).</p>
+    <ul class="hist" id="listaHist"></ul>
+    <div class="dlg-actions"><button class="btn ghost" type="button" id="btnCierraHist">Cerrar</button></div>
   </dialog>
 
   <script src="/static/app.js"></script>
