@@ -181,8 +181,8 @@ Genera `evidencias/resultados/<fecha>-<entorno>/REPORTE.md` en el formato del ta
 **Pruebas automáticas:**
 ```bash
 pip install -r requirements-dev.txt
-pytest -q tests/test_api.py     # seguridad, validación, Agent Cards, límites (sin modelo, gratis)
-pytest -q tests/test_persistencia.py  # SQLite y Postgres embebido: el historial y la memoria sobreviven a un reinicio
+pytest -q tests --ignore=tests/test_e2e.py   # todas las pruebas SIN modelo (gratis, ~20 s): seguridad, validación, Agent Cards, límites,
+                                             # Coordinador, Telegram simulado, ahorro de tokens y persistencia (SQLite y Postgres embebido)
 pytest -q tests/test_e2e.py     # extremo a extremo con modelo real y servidor (consume tokens; requiere ANTHROPIC_API_KEY)
 ```
 
@@ -233,7 +233,7 @@ app/
   agentes/         registro.py · alejandra/ · bryhan/ · carlos/  (prompts.py + herramientas.py)
   security.py      clave de acceso y límite de consultas
   config.py        variables de entorno
-  static/          index.html · styles.css · app.js  (consola web sin dependencias externas)
+  static/          index.html · styles.css · app.js (consola web, sin dependencias externas) · swagger.css (tema de /docs)
 evaluacion/        casos.py · evaluar.py (25 casos de fidelidad, A2A y seguridad → reporte)
 evidencias/        README.md (guion) · resultados/ · capturas/ · capturar_ui.py
 tests/             test_api.py · test_costos.py · test_coordinador.py · test_telegram.py · test_persistencia.py · test_e2e.py (modelo real)
