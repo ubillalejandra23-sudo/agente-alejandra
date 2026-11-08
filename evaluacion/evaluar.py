@@ -100,6 +100,8 @@ def comprobar(check, texto: str, datos: dict, ctx: Ctx) -> tuple[bool, str]:
         return all(a in ids for a in args), f"participan {args} (participaron {ids})"
     if tipo == "agentes_excluyen":
         return not any(a in ids for a in args), f"no participan {args} (participaron {ids})"
+    if tipo == "es_coordinador":
+        return bool(datos.get("coordinador")) and not datos.get("agentes"), "respondió el Coordinador (ningún especialista)"
     if tipo == "todos_ok":
         malos = [a["id"] for a in datos.get("agentes", []) if a["estado"] != "ok"]
         return not malos, "todos los agentes respondieron OK" + (f" (fallaron {malos})" if malos else "")
@@ -139,6 +141,7 @@ def ejecutar_caso(c: dict, ctx: Ctx) -> dict:
                 texto = datos["respuesta"]
                 ctx.ultima_consulta = datos["solicitud_id"]
                 res["solicitud_id"] = datos["solicitud_id"]
+                res["coordinador"] = datos.get("coordinador", False)
                 res["agentes"] = [{"id": a["id"], "estado": a["estado"], "ms": a["ms"], "context_id": a["context_id"]}
                                   for a in datos["agentes"]]
             res["obtenido"] = texto

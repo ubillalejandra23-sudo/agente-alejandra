@@ -90,6 +90,9 @@ class ConsultaOut(BaseModel):
     modo: str
     automatico: bool
     motivo_ruta: str
+    coordinador: bool = Field(False, description="True si respondió el **Coordinador** de la red (saludos, preguntas "
+                                                 "generales, temas fuera de alcance o consultas vagas); en ese caso "
+                                                 "`agentes` queda vacío y ningún especialista fue consultado.")
     respuesta: str = Field(..., description="Conclusión integrada + aporte de cada agente SIN modificar (Markdown).")
     conclusion: str | None = Field(None, description="Solo la conclusión integrada (None si respondió un único agente).")
     agentes: list[AporteOut]
@@ -123,7 +126,9 @@ Servicio **FastAPI** que expone tres agentes de IA que **colaboran entre sí por
 Se pueden sumar agentes de otras personas con solo su Agent Card (variable `A2A_EXTERNOS`).
 
 ### Cómo funciona una consulta colaborativa (`POST /api/consulta`)
-1. Un **enrutador** elige qué agentes aportan (o usted los elige).
+1. Un **enrutador** elige qué agentes aportan (o usted los elige). Los saludos, las preguntas generales («¿qué puedes
+   hacer?»), los temas fuera de alcance y las consultas demasiado vagas los atiende el **Coordinador**, la identidad común de
+   la red: presenta a los especialistas, pero no responde por ninguno ni elige uno al azar.
 2. Cada agente se consulta por **A2A real** (descubre su Agent Card y envía `message/send`), en paralelo o en secuencia.
 3. Se entrega una **conclusión integrada** y, debajo, **el aporte de cada agente sin modificar**. Se verifica que las
    cifras de la conclusión existan en los aportes. Si un agente falla, se informa como falla.
@@ -220,8 +225,10 @@ RESPUESTAS_CONSULTA = {401: {"model": ErrorOut, "description": "Clave ausente o 
           dependencies=[Depends(exigir_clave)], summary="Consulta colaborativa entre agentes (A2A)",
           description="Consulta a varios agentes por A2A y devuelve una conclusión integrada más el aporte de cada "
                       "agente **sin modificar**, con trazabilidad (`solicitud_id`, tiempos, contextId A2A). "
-                      "Sin `agentes` el enrutador elige los pertinentes. Si un solo agente participa, su respuesta se "
-                      "entrega tal cual. Un agente que falla se informa como `error`; si fallan todos, responde 502.",
+                      "Sin `agentes` el enrutador elige los pertinentes; si la consulta es general (un saludo, «¿qué puedes "
+                      "hacer?», un tema fuera de alcance o algo demasiado vago) responde el **Coordinador** de la red, "
+                      "que no asume la autoridad de ningún especialista (`coordinador: true`). Si un solo agente participa, "
+                      "su respuesta se entrega tal cual. Un agente que falla se informa como `error`; si fallan todos, responde 502.",
           responses=RESPUESTAS_CONSULTA)
 async def api_consulta(body: ConsultaIn):
     try:

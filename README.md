@@ -41,6 +41,8 @@ Otro agente A2A ──▶  │  /agents/{id}/a2a  ◀────────   
                           agente_alejandra  agente_bryhan   agente_carlos   (+ agentes externos A2A_EXTERNOS)
 ```
 
+**Identidad común (Coordinador):** los saludos, las preguntas generales («¿qué puedes hacer?», «¿quiénes son?»), los temas fuera de alcance y las consultas demasiado vagas **no se asignan a un especialista**: los atiende el **Coordinador de la red**, que presenta a los agentes y sus especialidades (según el catálogo real), explica cómo funciona la colaboración A2A, aclara los límites y pregunta qué se necesita. No responde consultas de fondo ni habla con la autoridad de ningún especialista; si el enrutador falla, tampoco elige un especialista al azar. Si la persona elige un agente a propósito, responde ese agente. La respuesta lleva `coordinador: true` y `agentes: []`.
+
 **Fidelidad de las conclusiones** (datos, cálculos, unidades y supuestos):
 - El aporte de **cada agente se entrega sin modificar** debajo de la conclusión; el modelo solo redacta la conclusión y tiene prohibido alterar cifras.
 - Se **verifica** que toda cifra de la conclusión exista en los aportes o en la consulta; si no, se muestra una advertencia (`verificacion.cifras_no_respaldadas`).
@@ -149,7 +151,7 @@ curl -X POST http://127.0.0.1:8000/agents/agente_alejandra/a2a -H "X-API-Key: SU
 ```
 Datos de prueba: RUT `76.123.456-7`, `77.987.654-3`, `78.555.111-2`; fondos `FM Acciones Chile`, `FM Deuda Privada`, `FM Inmobiliario`; tipos de empresa `sa`/`spa`/`ltda`.
 
-**Evaluación automática de fidelidad** (21 casos: cifras y cálculos exactos, datos faltantes, no inventar, fuera de alcance, inyección de instrucciones, enrutamiento, colaboración A2A y seguridad):
+**Evaluación automática de fidelidad** (25 casos: cifras y cálculos exactos, datos faltantes, no inventar, fuera de alcance, inyección de instrucciones, Coordinador, enrutamiento, colaboración A2A y seguridad):
 ```bash
 python -m evaluacion.evaluar                       # contra http://127.0.0.1:8000 (usa la 1ª clave de API_KEYS en .env)
 python -m evaluacion.evaluar --url https://<app>.herokuapp.com --key <clave> --entorno HEROKU
@@ -212,8 +214,8 @@ app/
   security.py      clave de acceso y límite de consultas
   config.py        variables de entorno
   static/          index.html · styles.css · app.js  (consola web sin dependencias externas)
-evaluacion/        casos.py · evaluar.py (21 casos de fidelidad, A2A y seguridad → reporte)
+evaluacion/        casos.py · evaluar.py (25 casos de fidelidad, A2A y seguridad → reporte)
 evidencias/        README.md (guion) · resultados/ · capturas/ · capturar_ui.py
-tests/             test_api.py · test_telegram.py · test_persistencia.py · test_e2e.py (modelo real)
+tests/             test_api.py · test_coordinador.py · test_telegram.py · test_persistencia.py · test_e2e.py (modelo real)
 Procfile  .python-version  requirements*.txt  .env.example
 ```

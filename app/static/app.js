@@ -104,12 +104,12 @@ function traza_agente(a) {
 
 
 /* ── diagrama animado del flujo A2A ── */
-const FL = { modo: "paralelo", sel: [], n: {}, t0: 0, tRouter: 0 };
+const FL = { modo: "paralelo", sel: [], general: false, n: {}, t0: 0, tRouter: 0 };
 const NS = "http://www.w3.org/2000/svg";
 const fl_estado_txt = (t, c) => { const e = $("flujoEstado"); e.textContent = t; e.className = "flujo-estado " + (c || ""); };
 
 function fl_reset(modo) {
-  FL.modo = modo || $("modo").value; FL.sel = []; FL.n = {}; FL.t0 = performance.now();
+  FL.modo = modo || $("modo").value; FL.sel = []; FL.general = false; FL.n = {}; FL.t0 = performance.now();
   fl_set("user", "ok", "tu consulta"); fl_render();
 }
 function fl_set(id, s, t = "") { FL.n[id] = { s, t }; }
@@ -126,7 +126,9 @@ function fl_render() {
   const iz = (id) => [pos[id][0], pos[id][1] + pos[id][3] / 2];                // izquierda-centro
   const curva = (a, b) => { const dx = Math.max(24, (b[0] - a[0]) / 2); return `M${a[0]},${a[1]} C${a[0] + dx},${a[1]} ${b[0] - dx},${b[1]} ${b[0]},${b[1]}`; };
   const aristas = [["user", "router", "router"]];
-  if (FL.sel.length) {
+  if (FL.general) {
+    aristas.push(["router", "synth", "synth"], ["synth", "resp", "resp"]);   // consulta general: Coordinador
+  } else if (FL.sel.length) {
     if (seq) {
       aristas.push(["router", FL.sel[0], FL.sel[0]]);
       for (let i = 1; i < FL.sel.length; i++) aristas.push([FL.sel[i - 1], FL.sel[i], FL.sel[i], "cadena"]);
@@ -154,8 +156,8 @@ function fl_render() {
   const nodo = (id, t1, vacio) => {
     const [x, y, w, h] = pos[id], e = est(id);
     let s = e.s;
-    if (id !== "user" && id !== "router" && FL.sel.length && id !== "resp" && id !== "synth" && !FL.sel.includes(id)) s = "omitido";
-    if (id === "synth" && FL.sel.length === 1) s = "omitido";
+    if (id !== "user" && id !== "router" && (FL.sel.length || FL.general) && id !== "resp" && id !== "synth" && !FL.sel.includes(id)) s = "omitido";
+    if (id === "synth" && FL.sel.length === 1 && !FL.general) s = "omitido";
     const t2 = s === "omitido" ? "no consultado" : e.t || (s === "espera" ? "en espera" : s === "activo" ? "trabajando…" : vacio || "");
     return `<g class="fl-nodo ${s}"><rect class="fl-box" x="${x}" y="${y}" width="${w}" height="${h}" rx="10"/>` +
       `<text class="fl-t1" x="${x + w / 2}" y="${y + (t2 ? 16 : 24)}" text-anchor="middle">${esc(t1)}</text>` +
@@ -163,7 +165,7 @@ function fl_render() {
   };
   svg += nodo("user", "Usuario") + nodo("router", "Enrutador", FL.sel.length ? "" : "elige agentes");
   for (const a of ag) svg += nodo(a.id, fl_corto(a), "disponible");
-  svg += nodo("synth", "Síntesis", "") + nodo("resp", "Respuesta", "") + "</svg>";
+  svg += nodo("synth", FL.general ? "Coordinador" : "Síntesis", "") + nodo("resp", "Respuesta", "") + "</svg>";
   $("flujo").innerHTML = svg;
 }
 
@@ -172,6 +174,8 @@ function fl_evento(ev) {
   const ms = () => seg(Math.round(performance.now() - FL.tRouter));
   if (ev.evento === "inicio") { fl_reset(ev.modo); fl_set("router", "activo", "eligiendo…"); FL.tRouter = performance.now(); fl_estado_txt("en curso", "run"); }
   else if (ev.evento === "enrutado") {
+    FL.general = !!ev.general;
+    if (FL.general) { fl_set("router", "ok", "general " + ms()); fl_set("synth", "activo", "respondiendo…"); fl_set("resp", "espera"); fl_render(); return; }
     FL.sel = ev.agentes; fl_set("router", "ok", ev.automatico ? "automático " + ms() : "manual");
     const seq = FL.modo === "secuencial" && FL.sel.length > 1;
     FL.sel.forEach((id, i) => fl_set(id, !seq || i === 0 ? "activo" : "espera"));
@@ -184,7 +188,7 @@ function fl_evento(ev) {
     FL.tSint = performance.now();
   } else if (ev.evento === "sintesis") fl_set("synth", "activo", "integrando…");
   else if (ev.evento === "final") {
-    if (FL.sel.length > 1) fl_set("synth", "ok", "listo");
+    if (FL.sel.length > 1 || FL.general) fl_set("synth", "ok", "listo");
     fl_set("resp", "ok", seg(ev.ms_total)); fl_estado_txt("completado " + seg(ev.ms_total), "ok");
   } else if (ev.evento === "error") {
     for (const k of Object.keys(FL.n)) if (FL.n[k].s === "activo") fl_set(k, "error", "falló");
@@ -195,10 +199,10 @@ function fl_evento(ev) {
 
 /* estado final de una consulta guardada (historial) */
 function fl_desde_resultado(r) {
-  fl_reset(r.modo); FL.sel = r.agentes.map((a) => a.id);
+  fl_reset(r.modo); FL.sel = r.agentes.map((a) => a.id); FL.general = r.agentes.length === 0;
   fl_set("router", "ok", r.automatico ? "automático" : "manual");
   for (const a of r.agentes) fl_set(a.id, a.estado === "ok" ? "ok" : "error", a.estado === "ok" ? seg(a.ms) : "falló");
-  if (FL.sel.length > 1) fl_set("synth", "ok", "listo");
+  if (FL.sel.length > 1 || FL.general) fl_set("synth", "ok", "listo");
   fl_set("resp", "ok", seg(r.ms_total)); fl_estado_txt("guardada " + seg(r.ms_total), "ok"); fl_render();
 }
 
@@ -232,7 +236,10 @@ async function enviar(texto) {
         const ev = JSON.parse(linea);
         fl_evento(ev);
         if (ev.evento === "inicio") { estado.conv = ev.conversation_id; traza_inicio(ev.solicitud_id, ev.modo); setProg("Eligiendo agentes…"); }
-        else if (ev.evento === "enrutado") { $("trRuta").textContent = (ev.automatico ? "Automática: " : "Elegidos: ") + nombres(ev.agentes).join(", "); setProg("Consultando por A2A a " + nombres(ev.agentes).join(", ") + "…"); }
+        else if (ev.evento === "enrutado") {
+          if (ev.general) { $("trRuta").textContent = "Coordinador (consulta general)"; setProg("El Coordinador está respondiendo…"); }
+          else { $("trRuta").textContent = (ev.automatico ? "Automática: " : "Elegidos: ") + nombres(ev.agentes).join(", "); setProg("Consultando por A2A a " + nombres(ev.agentes).join(", ") + "…"); }
+        }
         else if (ev.evento === "agente") { traza_agente(ev); setProg(`${ev.nombre} respondió (${seg(ev.ms)})…`); }
         else if (ev.evento === "sintesis") setProg("Integrando los aportes…");
         else if (ev.evento === "final") final = ev;
@@ -268,7 +275,7 @@ async function abrir_historial() {
     for (const c of lista) {
       const li = document.createElement("li"), b = document.createElement("button");
       b.type = "button";
-      b.innerHTML = `<b>${esc(c.pregunta)}</b><small>${esc(c.creada_en.replace("T", " ").replace("+00:00", " UTC"))} · ${c.agentes.map(esc).join(", ")} · ${seg(c.ms_total)} · ${esc(c.modo)}</small>`;
+      b.innerHTML = `<b>${esc(c.pregunta)}</b><small>${esc(c.creada_en.replace("T", " ").replace("+00:00", " UTC"))} · ${c.agentes.length ? c.agentes.map(esc).join(", ") : "Coordinador"} · ${seg(c.ms_total)} · ${esc(c.modo)}</small>`;
       b.onclick = () => cargar_conversacion(c.conversation_id, c.solicitud_id);
       li.append(b); ul.append(li);
     }
@@ -281,7 +288,7 @@ async function cargar_conversacion(conv, rid) {
     for (const it of items) { burbuja("user", esc(it.pregunta)); burbuja("bot md", md(it.respuesta)); }
     const sel = items.find((i) => i.solicitud_id === rid) || items[items.length - 1];
     traza_inicio(sel.solicitud_id, sel.modo); sel.agentes.forEach(traza_agente);
-    $("trRuta").textContent = (sel.automatico ? "Automática: " : "Elegidos: ") + sel.agentes.map((a) => a.nombre).join(", ");
+    $("trRuta").textContent = sel.agentes.length ? (sel.automatico ? "Automática: " : "Elegidos: ") + sel.agentes.map((a) => a.nombre).join(", ") : "Coordinador (consulta general)";
     $("trEstado").className = "estado ok"; $("trEstado").textContent = "guardada"; $("trTotal").textContent = seg(sel.ms_total);
     fl_desde_resultado(sel); $("dlgHistorial").close();
   } catch (e) { $("listaHist").innerHTML = `<li class="hint">${esc(e.message)}</li>`; }

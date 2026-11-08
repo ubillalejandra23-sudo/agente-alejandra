@@ -7,7 +7,7 @@ taller: **entorno y fecha · solicitud · resultado esperado · resultado obteni
 
 | Ruta | Qué es | Cómo se genera |
 |---|---|---|
-| `resultados/<fecha>-local/REPORTE.md` | 21 casos ejecutados contra el servidor **local**: fidelidad de cifras, datos faltantes, no inventar, fuera de alcance, inyección de instrucciones, enrutamiento, colaboración A2A y seguridad (acceso permitido/rechazado) | `python -m evaluacion.evaluar` |
+| `resultados/<fecha>-local/REPORTE.md` | 25 casos ejecutados contra el servidor **local**: fidelidad de cifras, datos faltantes, no inventar, fuera de alcance, inyección de instrucciones, Coordinador (saludos y preguntas generales), enrutamiento, colaboración A2A y seguridad (acceso permitido/rechazado) | `python -m evaluacion.evaluar` |
 | `resultados/<fecha>-heroku/REPORTE.md` | Los mismos casos contra el **despliegue en Heroku** (evidencia del entorno remoto) | `python -m evaluacion.evaluar --url https://<app>.herokuapp.com --key <clave> --entorno HEROKU` |
 | `resultados/*/resultados.json` | Datos crudos: respuesta completa, `solicitud_id`, agentes llamados por A2A, tiempos y contextId | (idem) |
 | `capturas/*.png` | Recorrido de la consola web: inicio, consulta en curso (diagrama animado), resultado y traza | `python evidencias/capturar_ui.py` |
@@ -34,13 +34,14 @@ Complementan las automáticas. Oculte la clave (use el botón *Authorize* de Swa
    `{"mensaje": "¿Cumple la empresa 77.987.654-3 con la normativa y conviene automatizar su revisión con IA?"}` → captura de la
    respuesta (conclusión integrada + aportes, `solicitud_id`, `agentes[].ms`).
 3. **Colaboración A2A:** consola web, elegir 2 o 3 agentes, enviar la consulta; captura con el diagrama y la traza visibles.
-4. **Dato faltante:** consola web con *Alejandra* sola: `¿Cumple mi empresa con la normativa?` → debe pedir el RUT.
-5. **Log:** captura de la terminal de uvicorn con las líneas `consulta rid=…` / `a2a rid=…` de una de esas consultas.
-6. **Agent Card:** `GET /agents/agente_bryhan/.well-known/agent-card.json` en el navegador.
-7. **Telegram — acceso permitido:** desde su cuenta autorizada escriba al bot `¿Cumple la empresa 77.987.654-3 con la normativa?` →
+4. **Saludo / pregunta general:** consola web sin elegir agentes: `hola` y `¿qué puedes hacer?` → responde el *Coordinador* (el diagrama lo muestra y ningún especialista es consultado).
+5. **Dato faltante:** consola web con *Alejandra* sola: `¿Cumple mi empresa con la normativa?` → debe pedir el RUT.
+6. **Log:** captura de la terminal de uvicorn con las líneas `consulta rid=…` / `a2a rid=…` de una de esas consultas.
+7. **Agent Card:** `GET /agents/agente_bryhan/.well-known/agent-card.json` en el navegador.
+8. **Telegram — acceso permitido:** desde su cuenta autorizada escriba al bot `¿Cumple la empresa 77.987.654-3 con la normativa?` →
    captura de la solicitud y de la respuesta del bot (y del log `telegram consulta … / orquestador a2a rid=…`).
-8. **Telegram — acceso rechazado:** desde OTRA cuenta de Telegram escriba al bot → debe responder «Acceso no autorizado» (captura).
-9. **Historial persistente:** reinicie el servidor (`Ctrl+C` y volver a iniciar), abra **Historial** en la consola y retome una conversación.
+9. **Telegram — acceso rechazado:** desde OTRA cuenta de Telegram escriba al bot → debe responder «Acceso no autorizado» (captura).
+10. **Historial persistente:** reinicie el servidor (`Ctrl+C` y volver a iniciar), abra **Historial** en la consola y retome una conversación.
 
 ## Registro de cada captura (copie y complete)
 
