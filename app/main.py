@@ -1,4 +1,5 @@
 """Red de agentes A2A (Alejandra · Bryhan · Carlos) sobre FastAPI. Interfaz web en `/`, Swagger en `/docs`."""
+import hmac
 import json
 import logging
 import uuid
@@ -15,11 +16,15 @@ from pydantic import BaseModel, Field
 from app import config
 from app.a2a_server import es_ruta_rpc, rutas_a2a
 from app.almacen import almacen
+from app.canal_telegram import telegram
 from app.agentes.registro import AGENTES, construir_agentes, responder
 from app.orquestador import MODOS, ErrorConsulta, consultar, roster, stream
 from app.security import clave_valida, exigir_clave, extraer_clave
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+# Las URLs de la API de Telegram contienen el token del bot: los clientes HTTP no deben registrarlas.
+for _n in ("httpx", "httpx2", "httpcore"):
+    logging.getLogger(_n).setLevel(logging.WARNING)
 log = logging.getLogger("api")
 STATIC = Path(__file__).parent / "static"
 
@@ -138,6 +143,7 @@ todos los agentes · `503` acceso no configurado.
 TAGS = [
     {"name": "Estado", "description": "Salud del servicio y catálogo de agentes. Público, sin datos sensibles."},
     {"name": "Consulta colaborativa", "description": "Varios agentes colaborando por A2A con conclusión integrada. **Requiere clave.**"},
+    {"name": "Canal Telegram", "description": "Webhook que Telegram llama con los mensajes del bot. Lo protege un secreto, no la clave de la API."},
     {"name": "Historial", "description": "Consultas guardadas con su trazabilidad. **Requiere clave.**"},
     {"name": "Agente", "description": "Consulta directa a un único agente. **Requiere clave.** Memoria por `conversation_id`."},
     {"name": "A2A: Agent Card", "description": "Tarjeta pública de cada agente (habilidades, URL, seguridad) para que otros agentes A2A lo descubran."},
@@ -149,7 +155,9 @@ async def lifespan(_app: FastAPI):
     """Abre la base de datos y reconstruye los agentes con la memoria persistente."""
     await almacen.abrir()
     construir_agentes(almacen.checkpointer)
+    await telegram.iniciar()
     yield
+    await telegram.detener()
     await almacen.cerrar()
 
 
@@ -255,6 +263,28 @@ async def historial_detalle(solicitud_id: str):
     if not r:
         raise HTTPException(404, "No existe una consulta con ese solicitud_id.")
     return r
+
+
+# ── canal Telegram ─────────────────────────────────────────────────────────────────────────────────────────────────
+@app.post("/telegram/webhook", tags=["Canal Telegram"], summary="Webhook de Telegram",
+          description="Lo llama **Telegram** (no una persona) con cada mensaje que recibe el bot. Exige la cabecera "
+                      "`X-Telegram-Bot-Api-Secret-Token` con el secreto configurado; solo atiende a los IDs de Telegram "
+                      "autorizados (`TELEGRAM_ALLOWED_IDS`). Responde 200 de inmediato y procesa en segundo plano.",
+          responses={401: {"model": ErrorOut, "description": "Secreto ausente o inválido."},
+                     404: {"model": ErrorOut, "description": "El canal Telegram no está activo en este servicio."}})
+async def telegram_webhook(request: Request):
+    if telegram.modo != "webhook":
+        raise HTTPException(404, "Canal Telegram no activo.")
+    secreto = request.headers.get("x-telegram-bot-api-secret-token", "")
+    if not hmac.compare_digest(secreto.encode(), config.TELEGRAM_WEBHOOK_SECRET.encode()):
+        log.warning("telegram: webhook rechazado (secreto inválido)")
+        raise HTTPException(401, "Secreto inválido.")
+    try:
+        update = await request.json()
+    except ValueError:
+        raise HTTPException(422, "Cuerpo no válido.") from None
+    telegram.encolar(update)
+    return {"ok": True}
 
 
 # ── agente directo ─────────────────────────────────────────────────────────────────────────────────────────────────

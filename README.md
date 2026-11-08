@@ -5,7 +5,7 @@ de IA que **colaboran entre sí por el protocolo A2A**, con acceso protegido, Sw
 
 | | |
 |---|---|
-| **Opciones elegidas** | **1 · Servicio FastAPI** con acceso protegido (Swagger en `/docs`) **y 2 · Canal de atención: página web con frontend de chat** (`/`) |
+| **Opciones elegidas** | **1 · Servicio FastAPI** con acceso protegido (Swagger en `/docs`) **y 2 · Canal de atención**: página web con frontend de chat (`/`) **y bot de Telegram** |
 | **Problema que resuelve** | Una consulta que cruza especialidades (p. ej. *¿cumple esta empresa la normativa?, ¿conviene automatizar su revisión con IA?, ¿cómo lo posiciono comercialmente?*) se reparte entre los agentes correctos, que se consultan por A2A, y se entrega **una conclusión integrada + el aporte de cada agente sin modificar**. |
 | **Entrega** | Local reproducible. Despliegue opcional en Heroku (ver abajo). |
 
@@ -31,6 +31,7 @@ SDK oficial `a2a-sdk`, y las rutas originales de Alejandra (`/a2a`, `/.well-know
                      ┌────────────────────── FastAPI (un solo servicio) ──────────────────────┐
 Navegador (/)  ──▶   │  /api/consulta/stream  ─▶ Orquestador                                  │
 Swagger (/docs) ──▶  │  /api/consulta              1) enrutador (LLM) elige agentes           │
+Telegram ──▶ webhook │  /telegram/webhook          (mismo orquestador, con autorización por ID)│
 Cliente HTTP    ──▶  │  /chat (un agente)          2) llamadas A2A reales (Agent Card +       │
                      │                                message/send, X-API-Key, X-Request-ID)  │
 Otro agente A2A ──▶  │  /agents/{id}/a2a  ◀────────   en paralelo o en secuencia              │
@@ -63,12 +64,40 @@ Otro agente A2A ──▶  │  /agents/{id}/a2a  ◀────────   
 | `POST /api/consulta` | **clave** | Consulta colaborativa (respuesta completa con trazabilidad). En Heroku usar `/stream` si la consulta puede pasar de 30 s |
 | `POST /api/consulta/stream` | **clave** | Igual, con progreso en vivo (NDJSON); lo usa la consola web |
 | `GET /api/historial` · `GET /api/historial/{solicitud_id}` | **clave** | Consultas guardadas (con `?conversation_id=…&detalle=true` devuelve una conversación completa) |
+| `POST /telegram/webhook` | secreto de Telegram | Lo llama Telegram con los mensajes del bot (no es para personas) |
 | `POST /chat` | **clave** | Consulta directa a un agente (`"agente": "agente_bryhan"`…) |
 | `POST /agents/{id}/a2a` | **clave** | JSON-RPC A2A de cada agente (`/a2a` = Alejandra, ruta original) |
 
 **Seguridad:** clave validada en el servidor (`X-API-Key` o `Authorization: Bearer`, comparación en tiempo constante). Sin `API_KEYS` el servidor **rechaza todo con 503** (falla cerrado). Límite de consultas por minuto y por clave (`RATE_LIMIT_PER_MIN`, error 429). Las claves viven solo en variables de entorno / `.env` (ignorado por git); el frontend no contiene ninguna.
 **Errores claros:** 401 sin clave · 422 entrada inválida · 429 límite · 502 falla de proveedor o de todos los agentes.
 **Trazabilidad:** cada consulta recibe un `solicitud_id` que viaja como `X-Request-ID` en cada llamada A2A y aparece en los logs del servidor (`consulta rid=…`, `A2A recibido … rid=…`, `a2a rid=… agente=… ms=…`) y en la traza de la consola web.
+
+## Canal de atención: Telegram
+Además de la API y la consola web, la red de agentes atiende por un **bot de Telegram**: la persona escribe su consulta, el bot
+la reparte entre los agentes por A2A y le devuelve la conclusión integrada con el aporte de cada uno.
+
+- **Autorización de usuarios del canal:** el bot solo responde a los IDs de Telegram listados en `TELEGRAM_ALLOWED_IDS` (vacío = rechaza a todos) y solo en chats privados. Cualquier otra persona recibe «Acceso no autorizado» y no se consulta nada.
+- **Webhook protegido:** Telegram llama a `POST /telegram/webhook` con la cabecera `X-Telegram-Bot-Api-Secret-Token` (`TELEGRAM_WEBHOOK_SECRET`); sin ese secreto responde 401.
+- **El token no se registra:** la URL de la API de Telegram contiene el token; los clientes HTTP no la escriben en los logs y los errores se reducen a su tipo.
+- **Comandos:** `/start` · `/ayuda` · `/agentes` · `/alejandra`, `/bryhan`, `/carlos` *pregunta* (consulta a uno solo) · `/nueva` (conversación nueva). Un mensaje cualquiera va al enrutador automático.
+- **Límites y costos:** el mismo límite de consultas por minuto que la API, aplicado por persona; no hay envíos masivos ni mensajes no solicitados (el bot solo responde a quien le escribe).
+
+**Preparación manual (una vez):**
+1. En Telegram, con **@BotFather**: `/newbot` → nombre y usuario terminado en `bot` → guarde el **token**.
+2. Con **@userinfobot** obtenga su **ID numérico**.
+3. En `.env`: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_IDS` (su ID; varios separados por coma) y `TELEGRAM_WEBHOOK_SECRET` (`python -c "import secrets; print(secrets.token_urlsafe(24))"`).
+
+**Probar en local** (modo *polling*: el servidor consulta a Telegram, no necesita URL pública):
+```bash
+TELEGRAM_MODO=polling uvicorn app.main:app --port 8000       # Windows PowerShell: $env:TELEGRAM_MODO="polling"; uvicorn app.main:app --port 8000
+```
+Abra su bot en Telegram, pulse *Iniciar* y escriba una consulta. Para detenerlo: `Ctrl+C`. ⚠ Con el bot en polling local, el webhook de Heroku queda desregistrado; vuelve a activarse con `heroku restart`.
+
+**En Heroku** el servicio registra solo el webhook al arrancar (si `PUBLIC_URL` es https): no hace falta otro dyno ni costo adicional.
+```bash
+heroku config:set TELEGRAM_BOT_TOKEN=<token> TELEGRAM_ALLOWED_IDS=<su-id> TELEGRAM_WEBHOOK_SECRET=<secreto> -a <app>
+```
+Sin `TELEGRAM_BOT_TOKEN` el canal queda desactivado y el resto del servicio funciona igual.
 
 ## Preparación manual (lo que debe tener el evaluador)
 1. **Python 3.11+** (probado con 3.12) e internet.
@@ -152,6 +181,7 @@ Carpeta `evidencias/` (ver `evidencias/README.md` con el guion):
 - El historial guarda las preguntas y respuestas en la base (datos de prueba, sin datos personales); proteja la clave y la base como cualquier registro de consultas.
 - El límite de consultas protege `/chat` y `/api/consulta`; los endpoints A2A directos están protegidos por clave pero sin límite de tasa.
 - La verificación de cifras detecta valores ausentes en los aportes; no valida el *razonamiento* de la conclusión (por eso los aportes se entregan completos).
+- Telegram: solo mensajes de texto en chats privados; las respuestas largas se parten en varios mensajes (límite de 4096 caracteres). El número de conversación por chat se reinicia con `/nueva`.
 - A2A: respuesta inmediata (sin streaming ni cancelación de tareas). Los agentes de Bryhan y Carlos pasaron de Gemini a Claude: su comportamiento puede diferir levemente del original.
 
 ## Despliegue en Heroku (opcional, +1 punto)
@@ -176,6 +206,7 @@ app/
   orquestador.py   enrutador, llamadas A2A, síntesis y verificación de cifras
   a2a_server.py    Agent Card y endpoint A2A por agente (a2a-sdk)
   a2a_cliente.py   cliente A2A (descubre la tarjeta y envía message/send)
+  canal_telegram.py  bot de Telegram (webhook/polling, autorización por ID, formato de respuestas)
   almacen.py       persistencia: Postgres / SQLite / memoria (checkpointer de LangGraph + historial)
   agentes/         registro.py · alejandra/ · bryhan/ · carlos/  (prompts.py + herramientas.py)
   security.py      clave de acceso y límite de consultas
@@ -183,6 +214,6 @@ app/
   static/          index.html · styles.css · app.js  (consola web sin dependencias externas)
 evaluacion/        casos.py · evaluar.py (21 casos de fidelidad, A2A y seguridad → reporte)
 evidencias/        README.md (guion) · resultados/ · capturas/ · capturar_ui.py
-tests/             test_api.py · test_persistencia.py · test_e2e.py (modelo real)
+tests/             test_api.py · test_telegram.py · test_persistencia.py · test_e2e.py (modelo real)
 Procfile  .python-version  requirements*.txt  .env.example
 ```

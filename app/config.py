@@ -34,3 +34,14 @@ def agentes_externos() -> list[dict]:
     except (ValueError, AttributeError):
         log.error("A2A_EXTERNOS no es un JSON válido; se ignora.")
         return []
+
+
+# ── Canal Telegram (opcional: sin TELEGRAM_BOT_TOKEN queda desactivado) ───────────────────────────────────────────────
+TELEGRAM_BOT_TOKEN = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+# IDs numéricos de Telegram autorizados, separados por coma. Vacío = el bot rechaza a todos (falla cerrado).
+TELEGRAM_ALLOWED_IDS = {int(x) for x in (os.environ.get("TELEGRAM_ALLOWED_IDS") or "").replace(" ", "").split(",")
+                        if x.lstrip("-").isdigit()}
+# Secreto que Telegram envía en cada llamada al webhook (A-Z a-z 0-9 _ -).
+TELEGRAM_WEBHOOK_SECRET = (os.environ.get("TELEGRAM_WEBHOOK_SECRET") or "").strip()
+# auto: webhook si PUBLIC_URL es https, apagado si no | webhook | polling (pruebas locales) | off
+TELEGRAM_MODO = (os.environ.get("TELEGRAM_MODO") or "auto").strip().lower()

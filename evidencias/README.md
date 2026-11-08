@@ -37,7 +37,10 @@ Complementan las automáticas. Oculte la clave (use el botón *Authorize* de Swa
 4. **Dato faltante:** consola web con *Alejandra* sola: `¿Cumple mi empresa con la normativa?` → debe pedir el RUT.
 5. **Log:** captura de la terminal de uvicorn con las líneas `consulta rid=…` / `a2a rid=…` de una de esas consultas.
 6. **Agent Card:** `GET /agents/agente_bryhan/.well-known/agent-card.json` en el navegador.
-7. **Historial persistente:** reinicie el servidor (`Ctrl+C` y volver a iniciar), abra **Historial** en la consola y retome una conversación.
+7. **Telegram — acceso permitido:** desde su cuenta autorizada escriba al bot `¿Cumple la empresa 77.987.654-3 con la normativa?` →
+   captura de la solicitud y de la respuesta del bot (y del log `telegram consulta … / orquestador a2a rid=…`).
+8. **Telegram — acceso rechazado:** desde OTRA cuenta de Telegram escriba al bot → debe responder «Acceso no autorizado» (captura).
+9. **Historial persistente:** reinicie el servidor (`Ctrl+C` y volver a iniciar), abra **Historial** en la consola y retome una conversación.
 
 ## Registro de cada captura (copie y complete)
 
